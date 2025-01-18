@@ -10,7 +10,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include <filesystem> // Para manejar directorios (C++17)
+#include <filesystem> // Para manejar directorios (C++17)--
 
 
 
@@ -72,13 +72,86 @@ void makeModal(const std::vector<std::string>& args) {
 
 
 void makeMigration(const std::vector<std::string>& args) {
-    if (args.size() < 1) {
-        std::cerr << "Error: Falta el nombre de la tabla.\n";
+    if (args.empty()) {
+        std::cerr << "Error: Debes proporcionar el nombre de la tabla.\n";
         return;
     }
-    std::cout << "Creando migración para la tabla: " << args[0] << std::endl;
-}
 
+    std::string tableName = args[0];
+    std::string migrationName = "create_" + tableName + "_table";
+
+    // Crear directorio si no existe
+    std::string directory = "database/migrations";
+    if (!std::filesystem::exists(directory)) {
+        std::filesystem::create_directories(directory);
+        std::cout << "Directorio creado: " << directory << std::endl;
+    }
+
+    // Crear archivo de migración
+    std::string timestamp = std::to_string(std::time(nullptr)); // Usar marca de tiempo única
+    std::string fileName = directory + "/" + timestamp + "_" + migrationName + ".cpp";
+
+    std::ofstream migrationFile(fileName);
+    if (migrationFile.is_open()) {
+        migrationFile << "#include \"../Libs/Schema.h\"\n\n";
+        migrationFile << "class " << migrationName << " : public Schema {\n";
+        migrationFile << "public:\n";
+        migrationFile << "    void up() override {\n";
+        migrationFile << "        createTable(\"" << tableName << "\", {\n";
+        migrationFile << "            {\"id\", \"INT AUTO_INCREMENT PRIMARY KEY\"},\n";
+        migrationFile << "            {\"created_at\", \"DATETIME\"},\n";
+        migrationFile << "            {\"updated_at\", \"DATETIME\"}\n";
+        migrationFile << "        });\n";
+        migrationFile << "    }\n\n";
+        migrationFile << "    void down() override {\n";
+        migrationFile << "        dropTable(\"" << tableName << "\");\n";
+        migrationFile << "    }\n";
+        migrationFile << "};\n";
+
+        migrationFile.close();
+        std::cout << "Archivo de migración creado: " << fileName << std::endl;
+    } else {
+        std::cerr << "Error al crear el archivo de migración " << fileName << ".\n";
+    }
+}
+void migrate(const std::vector<std::string>& args) {
+    const std::string migrationsPath = "database/migrations";
+
+    if (!fs::exists(migrationsPath)) {
+        std::cerr << "Error: La carpeta de migraciones no existe en " << migrationsPath << "\n";
+        return;
+    }
+
+    for (const auto& entry : fs::directory_iterator(migrationsPath)) {
+        if (entry.path().extension() == ".so") { // Buscando archivos compilados como .so
+            std::string migrationPath = entry.path().string();
+            void* handle = dlopen(migrationPath.c_str(), RTLD_LAZY);
+            if (!handle) {
+                std::cerr << "Error cargando migración: " << dlerror() << "\n";
+                continue;
+            }
+
+            // Buscar la función `createMigration`
+            typedef Schema* (*CreateMigration)();
+            CreateMigration createMigration = (CreateMigration)dlsym(handle, "createMigration");
+            if (!createMigration) {
+                std::cerr << "Error encontrando la función createMigration en " << migrationPath << "\n";
+                dlclose(handle);
+                continue;
+            }
+
+            // Crear y ejecutar la migración
+            Schema* migration = createMigration();
+            std::cout << "Ejecutando migración: " << entry.path().filename() << "\n";
+            migration->up();
+            delete migration;
+
+            dlclose(handle);
+        }
+    }
+
+    std::cout << "Todas las migraciones ejecutadas correctamente.\n";
+}
 void makeController(const std::vector<std::string>& args) {
     if (args.size() < 1) {
         std::cerr << "Error: Falta el nombre del controlador.\n";
@@ -133,7 +206,7 @@ int main(int argc, char* argv[]) {
     handler.registerCommand("make:modal", makeModal);
     handler.registerCommand("make:migration", makeMigration);
     handler.registerCommand("make:controller", makeController);
-
+    handler.registerCommand("migrate", migrate);
     // Ejecutar el comando
     handler.executeCommand(argc, argv);
 

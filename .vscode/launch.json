@@ -6,7 +6,7 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/laraplus",
-      "args": ["make:modal", "Usuario"],
+      "args": ["make:migration", "users"],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
